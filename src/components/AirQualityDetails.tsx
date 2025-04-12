@@ -1,5 +1,5 @@
 
-import { Lungs, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Wind, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { AirQuality } from "@/types/weather";
@@ -15,7 +15,7 @@ const AirQualityDetails = ({ airQuality, isLoading }: AirQualityDetailsProps) =>
       <Card className="data-card-gradient mt-4 animate-pulse-slow">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center">
-            <Lungs className="mr-2 h-5 w-5" />
+            <Wind className="mr-2 h-5 w-5" />
             Air Quality Details
           </CardTitle>
         </CardHeader>
@@ -77,7 +77,7 @@ const AirQualityDetails = ({ airQuality, isLoading }: AirQualityDetailsProps) =>
     <Card className="data-card-gradient mt-4">
       <CardHeader className="pb-2">
         <CardTitle className="text-lg flex items-center">
-          <Lungs className="mr-2 h-5 w-5" />
+          <Wind className="mr-2 h-5 w-5" />
           Air Quality Details
         </CardTitle>
       </CardHeader>

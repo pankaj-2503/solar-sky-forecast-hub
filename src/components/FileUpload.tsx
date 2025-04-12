@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Upload, FileType, Check, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import * as XLSX from 'xlsx';
 import { PredictionResult } from "@/types/prediction";

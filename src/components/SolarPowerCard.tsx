@@ -1,5 +1,5 @@
 
-import { Sun, Droplets, Wind, BatteryCharging } from 'lucide-react';
+import { Sun, Droplets, Wind, BatteryCharging, Cloud } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { WeatherData } from "@/types/weather";

@@ -123,7 +123,12 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                   width={100}
                 />
                 <Tooltip
-                  formatter={(value) => [`${value.toFixed(1)}%`, "Importance"]}
+                  formatter={(value) => {
+                    if (typeof value === 'number') {
+                      return [`${value.toFixed(1)}%`, "Importance"];
+                    }
+                    return [value, "Importance"];
+                  }}
                 />
                 <Bar 
                   dataKey="importance" 
