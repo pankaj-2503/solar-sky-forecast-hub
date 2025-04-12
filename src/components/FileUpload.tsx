@@ -69,7 +69,7 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
       const jsonData = XLSX.utils.sheet_to_json(sheet);
       setProgress(70);
       
-      // Validate data format
+      // Validate data format with new requirements
       validateData(jsonData);
       
       // Process with multiple models
@@ -110,13 +110,12 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
         pm10: item.pm10 || 0,
         pm25: item.pm25 || 0,
         cloudCover: item.cloudCover || 0,
-        actualPower: item.actualPower || 0,
         time: item.time || new Date().toISOString()
       }));
       
       setProgress(70);
       
-      // Process with multiple models
+      // Process with multiple models without requiring actualPower
       const results = simulateMultipleModelPredictions(formattedData);
       setProgress(100);
       
@@ -156,7 +155,7 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
       throw new Error("The file contains no data");
     }
     
-    // Check for required columns
+    // Check for required columns - update to include all our needed parameters
     const requiredColumns = ['temperature', 'humidity', 'windSpeed', 'solarIrradiance'];
     const firstItem = data[0];
     
@@ -165,9 +164,17 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
     if (missingColumns.length > 0) {
       throw new Error(`Missing required columns: ${missingColumns.join(', ')}`);
     }
+    
+    // Optional columns to check for and inform user
+    const optionalColumns = ['pm10', 'pm25', 'cloudCover'];
+    const availableOptional = optionalColumns.filter(col => col in firstItem);
+    
+    if (availableOptional.length > 0) {
+      toast.info(`Additional data found: ${availableOptional.join(', ')}. This will improve predictions.`);
+    }
   };
 
-  // This is a simulation of multiple ML model predictions
+  // This is a simulation of multiple ML model predictions with enhanced parameters
   const simulateMultipleModelPredictions = (data: any[]): PredictionResult => {
     // Define a list of models with different characteristics
     const models = [
@@ -176,38 +183,55 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
         accuracy: 0.87, 
         color: "#0ea5e9", 
         biasTowardsIrradiance: 0.65, 
-        biasTowardsTemp: 0.15 
+        biasTowardsTemp: 0.15,
+        biasTowardsPM: 0.10
       },
       { 
         name: "gradient_boosting", 
         accuracy: 0.89, 
         color: "#10b981", 
         biasTowardsIrradiance: 0.55, 
-        biasTowardsTemp: 0.25 
+        biasTowardsTemp: 0.25,
+        biasTowardsPM: 0.15
       },
       { 
         name: "neural_network", 
         accuracy: 0.85, 
         color: "#8b5cf6", 
         biasTowardsIrradiance: 0.60, 
-        biasTowardsTemp: 0.20 
+        biasTowardsTemp: 0.20,
+        biasTowardsPM: 0.08
+      },
+      { 
+        name: "support_vector", 
+        accuracy: 0.83, 
+        color: "#f97316", 
+        biasTowardsIrradiance: 0.58, 
+        biasTowardsTemp: 0.18,
+        biasTowardsPM: 0.12
       },
     ];
     
     // Create results for each model
     const modelResults = models.map(model => {
-      // Generate predictions with slight variations based on model characteristics
+      // Generate predictions with variations based on model characteristics
       const predictions = data.map(row => {
         const basePower = row.solarIrradiance * model.biasTowardsIrradiance;
         const tempFactor = 1 - Math.abs(25 - row.temperature) * (model.biasTowardsTemp * 0.1);
         const humidityFactor = 1 - (row.humidity * 0.003);
-        const dustFactor = row.pm10 ? 1 - (row.pm10 * 0.005) : 1;
+        
+        // Enhanced dust impact calculations
+        const pm10Factor = row.pm10 ? 1 - (row.pm10 * 0.005 * model.biasTowardsPM) : 1;
+        const pm25Factor = row.pm25 ? 1 - (row.pm25 * 0.01 * model.biasTowardsPM) : 1;
+        const dustFactor = Math.min(pm10Factor, pm25Factor);
+        
         const cloudFactor = row.cloudCover ? 1 - (row.cloudCover * 0.01) : 1;
+        const windFactor = 1 + (row.windSpeed * 0.002); // Wind can help clean panels
         
         // Add some randomness to simulate model differences
         const randomFactor = 0.9 + (Math.random() * 0.2);
         
-        return basePower * tempFactor * humidityFactor * dustFactor * cloudFactor * randomFactor;
+        return basePower * tempFactor * humidityFactor * dustFactor * cloudFactor * windFactor * randomFactor;
       });
       
       // Calculate model metrics with variations
@@ -219,12 +243,12 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
         name: model.name,
         predictions,
         metrics: { mse, r2, mae },
-        featureImportance: generateFeatureImportance(model),
+        featureImportance: generateFeatureImportance(model, data),
         color: model.color
       };
     });
     
-    // Extract actual power if available
+    // Extract actual power if available, but don't require it
     const actualPower = data.some(row => 'actualPower' in row) 
       ? data.map(row => row.actualPower) 
       : undefined;
@@ -240,17 +264,34 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
     };
   };
   
-  // Generate feature importance scores with variations per model
-  const generateFeatureImportance = (model: any) => {
-    // Base importance values
-    const baseImportance = {
+  // Enhanced feature importance calculation based on available parameters
+  const generateFeatureImportance = (model: any, data: any[]) => {
+    // Determine which features are available in the data
+    const firstItem = data[0];
+    const haspm10 = 'pm10' in firstItem;
+    const haspm25 = 'pm25' in firstItem;
+    const hasCloudCover = 'cloudCover' in firstItem;
+    
+    // Base importance values with model-specific biases
+    let baseImportance: Record<string, number> = {
       'solarIrradiance': model.biasTowardsIrradiance,
       'temperature': model.biasTowardsTemp,
       'humidity': 0.10 + (Math.random() * 0.05 - 0.025),
-      'pm10': 0.05 + (Math.random() * 0.03 - 0.015),
       'windSpeed': 0.03 + (Math.random() * 0.02 - 0.01),
-      'cloudCover': 0.02 + (Math.random() * 0.02 - 0.01)
     };
+    
+    // Add optional parameters if available
+    if (haspm10) {
+      baseImportance['pm10'] = 0.05 + (model.biasTowardsPM * 0.5);
+    }
+    
+    if (haspm25) {
+      baseImportance['pm25'] = 0.06 + (model.biasTowardsPM * 0.6);
+    }
+    
+    if (hasCloudCover) {
+      baseImportance['cloudCover'] = 0.08 + (Math.random() * 0.02 - 0.01);
+    }
     
     // Normalize to ensure sum is 1.0
     const sum = Object.values(baseImportance).reduce((a, b) => a + b, 0);
@@ -333,19 +374,19 @@ const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
       <div className="mt-4 text-sm space-y-2">
         <div className="flex items-start">
           <Check className="h-4 w-4 text-green-500 mt-0.5 mr-2 shrink-0" />
-          <p>File should contain columns for temperature, humidity, windSpeed, solarIrradiance</p>
+          <p>Required: temperature, humidity, windSpeed, solarIrradiance</p>
         </div>
         <div className="flex items-start">
           <Check className="h-4 w-4 text-green-500 mt-0.5 mr-2 shrink-0" />
-          <p>Additional columns like pm10, pm2_5 (for dust) will improve predictions</p>
+          <p>Optional: pm10, pm25 (dust particles), cloudCover (improves predictions)</p>
         </div>
         <div className="flex items-start">
           <Check className="h-4 w-4 text-green-500 mt-0.5 mr-2 shrink-0" />
-          <p>Multiple machine learning models will be used for comparison</p>
+          <p>Optional: actualPower (for comparing with predictions if available)</p>
         </div>
         <div className="flex items-start">
-          <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 mr-2 shrink-0" />
-          <p>For best results, include actual power output for model evaluation</p>
+          <Check className="h-4 w-4 text-green-500 mt-0.5 mr-2 shrink-0" />
+          <p>Four ML models will analyze impact of dust on solar power output</p>
         </div>
       </div>
     </div>

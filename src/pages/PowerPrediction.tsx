@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { FileWarning, Database, Sun, ArrowDown, ChevronDown } from "lucide-react";
+import { FileWarning, Database, Sun, ArrowDown, ChevronDown, CloudSun, Wind, Thermometer, Droplets } from "lucide-react";
 import FileUpload from "@/components/FileUpload";
 import LocationInput from "@/components/LocationInput";
 import PredictionResults from "@/components/PredictionResults";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 
 const PowerPrediction = () => {
   const [uploadedData, setUploadedData] = useState<any[] | null>(null);
@@ -22,18 +23,18 @@ const PowerPrediction = () => {
   };
 
   const handleLocationSubmit = async (lat: number, lon: number) => {
-    // Simulate fetching weather data from an API
     try {
-      // Normally this would call a real API
-      // For demonstration, we'll generate simulated weather data
+      // Generate simulated weather data based on location
       const simulatedData = generateWeatherDataFromLocation(lat, lon);
       setWeatherData(simulatedData);
+      toast.success(`Generated weather data for lat: ${lat.toFixed(2)}, lon: ${lon.toFixed(2)}`);
     } catch (error) {
-      console.error("Error fetching weather data:", error);
+      console.error("Error generating weather data:", error);
+      toast.error("Failed to generate weather data");
     }
   };
 
-  // Function to simulate generating weather data based on location
+  // Function to generate weather data based on location
   const generateWeatherDataFromLocation = (lat: number, lon: number): WeatherPredictionData[] => {
     // Generate 24 hours of simulated weather data
     const now = new Date();
@@ -44,6 +45,13 @@ const PowerPrediction = () => {
     
     // Use longitude for time offset to simulate day/night cycle
     const timeOffset = Math.floor(lon / 15); // rough approximation of time zones
+    
+    // Different regions have different dust levels
+    // Desert regions tend to have higher dust concentrations
+    const isDesertRegion = (lat > 15 && lat < 35) || (lat < -15 && lat > -35);
+    const isIndustrialRegion = (lat > 30 && lat < 60) && (lon > -10 && lon < 40); // Europe/Industrial
+    const basePM10 = isDesertRegion ? 50 : (isIndustrialRegion ? 30 : 15);
+    const basePM25 = isDesertRegion ? 25 : (isIndustrialRegion ? 20 : 8);
     
     for (let i = 0; i < 24; i++) {
       const hour = (now.getHours() + i) % 24;
@@ -65,20 +73,15 @@ const PowerPrediction = () => {
       const peakHour = Math.abs(hour - 12);
       const solarIrradiance = daylight ? Math.max(0, 1000 * (1 - peakHour / 12) * (1 - Math.abs(lat) / 90)) : 0;
       
-      // PM10 dust level - can vary by location, time of day, etc.
-      // Using latitude as a rough proxy for climate zones
-      const isDesertRegion = (lat > 15 && lat < 35) || (lat < -15 && lat > -35);
-      const basePM10 = isDesertRegion ? 50 : 20;
-      const pm10 = basePM10 + (Math.random() * 20);
+      // PM10 dust level varies by region, time of day, etc.
+      const daytimePMFactor = (hour > 8 && hour < 18) ? 1.2 : 0.8; // More dust during day
+      const pm10 = basePM10 * daytimePMFactor + (Math.random() * 15);
       
       // PM2.5 - often correlated with PM10 but at lower values
-      const pm25 = pm10 * 0.6 * (0.8 + Math.random() * 0.4);
+      const pm25 = basePM25 * daytimePMFactor + (Math.random() * 10);
       
-      // Cloud cover
+      // Cloud cover - varies by region and time
       const cloudCover = Math.random() * 100;
-      
-      // Simulate what actual power might be (for comparison)
-      const actualPower = solarIrradiance * 0.2 * (1 - cloudCover/200) * (1 - pm10/500);
       
       data.push({
         temperature,
@@ -88,7 +91,6 @@ const PowerPrediction = () => {
         pm10,
         pm25,
         cloudCover,
-        actualPower,
         time: time.toISOString()
       });
     }
@@ -103,8 +105,8 @@ const PowerPrediction = () => {
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
             Solar Power Prediction
           </h1>
-          <p className="text-muted-foreground max-w-md">
-            Compare multiple machine learning models to predict solar power output and analyze dust impact
+          <p className="text-muted-foreground max-w-xl">
+            Compare multiple machine learning models to predict solar power output and analyze dust impact on PV performance
           </p>
         </div>
 
@@ -137,7 +139,7 @@ const PowerPrediction = () => {
                   <LocationInput 
                     onLocationSubmit={handleLocationSubmit} 
                     title="Enter Location for Weather Data"
-                    subtitle="We'll fetch current meteorological data based on your coordinates"
+                    subtitle="We'll generate meteorological data based on your coordinates including regional dust levels"
                   />
                   
                   {weatherData && weatherData.length > 0 && (
@@ -146,7 +148,7 @@ const PowerPrediction = () => {
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm flex items-center">
                             <Database className="mr-2 h-4 w-4" />
-                            Weather Data Retrieved
+                            Weather Data Generated
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -155,26 +157,66 @@ const PowerPrediction = () => {
                           </p>
                           <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                             <div className="bg-background rounded p-2">
-                              <p className="text-muted-foreground">Temperature</p>
+                              <div className="flex items-center mb-1">
+                                <Thermometer className="h-3 w-3 mr-1 text-red-500" />
+                                <p className="text-muted-foreground">Temperature</p>
+                              </div>
                               <p className="font-medium">{weatherData[0].temperature.toFixed(1)}°C</p>
                             </div>
                             <div className="bg-background rounded p-2">
-                              <p className="text-muted-foreground">Irradiance</p>
+                              <div className="flex items-center mb-1">
+                                <Sun className="h-3 w-3 mr-1 text-yellow-500" />
+                                <p className="text-muted-foreground">Irradiance</p>
+                              </div>
                               <p className="font-medium">{weatherData[0].solarIrradiance.toFixed(0)} W/m²</p>
                             </div>
                             <div className="bg-background rounded p-2">
-                              <p className="text-muted-foreground">PM10</p>
+                              <div className="flex items-center mb-1">
+                                <CloudSun className="h-3 w-3 mr-1 text-amber-500" />
+                                <p className="text-muted-foreground">PM10</p>
+                              </div>
                               <p className="font-medium">{weatherData[0].pm10?.toFixed(1)} µg/m³</p>
+                            </div>
+                          </div>
+                          
+                          <div className="mt-4 grid grid-cols-4 gap-2 text-xs">
+                            <div className="bg-background rounded p-2">
+                              <div className="flex items-center mb-1">
+                                <Droplets className="h-3 w-3 mr-1 text-blue-500" />
+                                <p className="text-muted-foreground">Humidity</p>
+                              </div>
+                              <p className="font-medium">{weatherData[0].humidity.toFixed(1)}%</p>
+                            </div>
+                            <div className="bg-background rounded p-2">
+                              <div className="flex items-center mb-1">
+                                <Wind className="h-3 w-3 mr-1 text-cyan-500" />
+                                <p className="text-muted-foreground">Wind</p>
+                              </div>
+                              <p className="font-medium">{weatherData[0].windSpeed.toFixed(1)} m/s</p>
+                            </div>
+                            <div className="bg-background rounded p-2">
+                              <div className="flex items-center mb-1">
+                                <CloudSun className="h-3 w-3 mr-1 text-gray-500" />
+                                <p className="text-muted-foreground">PM2.5</p>
+                              </div>
+                              <p className="font-medium">{weatherData[0].pm25?.toFixed(1)} µg/m³</p>
+                            </div>
+                            <div className="bg-background rounded p-2">
+                              <div className="flex items-center mb-1">
+                                <CloudSun className="h-3 w-3 mr-1 text-blue-300" />
+                                <p className="text-muted-foreground">Cloud</p>
+                              </div>
+                              <p className="font-medium">{weatherData[0].cloudCover?.toFixed(1)}%</p>
                             </div>
                           </div>
                           
                           <div className="mt-4">
                             <Button 
                               size="sm" 
-                              variant="secondary" 
                               className="w-full"
                               onClick={() => {
                                 setActiveTab("upload");
+                                toast.info("Use the Process Data button to analyze this weather data");
                               }}
                             >
                               <ArrowDown className="h-4 w-4 mr-2" />

@@ -18,7 +18,7 @@ export interface PredictionResult {
   metrics: PredictionMetrics;
   featureImportance: Record<string, number>;
   modelResults: ModelResult[];  // Results from multiple models
-  actualPower?: number[];  // Actual power values if available
+  actualPower?: number[];  // Actual power values if available (now optional)
 }
 
 export interface WeatherPredictionData {
@@ -29,6 +29,6 @@ export interface WeatherPredictionData {
   pm10?: number;
   pm25?: number;
   cloudCover?: number;
-  actualPower?: number;
+  actualPower?: number;  // Now optional
   time?: string;
 }
