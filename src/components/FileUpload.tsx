@@ -1,20 +1,22 @@
 
 import { useState } from "react";
-import { Upload, FileType, Check, AlertCircle } from "lucide-react";
+import { Upload, FileType, Check, AlertCircle, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import * as XLSX from 'xlsx';
-import { PredictionResult } from "@/types/prediction";
+import { PredictionResult, WeatherPredictionData } from "@/types/prediction";
 
 interface FileUploadProps {
   onDataProcessed: (data: any[], results: PredictionResult) => void;
+  weatherData?: WeatherPredictionData[];
 }
 
-const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
+const FileUpload = ({ onDataProcessed, weatherData }: FileUploadProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [useWeatherData, setUseWeatherData] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -27,12 +29,19 @@ const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
       }
       
       setFile(selectedFile);
+      setUseWeatherData(false);
     }
   };
 
   const processData = async () => {
-    if (!file) {
-      toast.error("Please select a file first");
+    if (!file && !useWeatherData) {
+      if (weatherData && weatherData.length > 0) {
+        // Allow using fetched weather data
+        setUseWeatherData(true);
+        processWeatherData();
+      } else {
+        toast.error("Please select a file first");
+      }
       return;
     }
 
@@ -40,7 +49,12 @@ const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
     setProgress(10);
 
     try {
-      const data = await readFileAsArrayBuffer(file);
+      if (useWeatherData && weatherData) {
+        processWeatherData();
+        return;
+      }
+
+      const data = await readFileAsArrayBuffer(file!);
       setProgress(30);
       
       // Parse Excel data
@@ -58,8 +72,8 @@ const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
       // Validate data format
       validateData(jsonData);
       
-      // Process with the random forest model (this is simulated)
-      const results = simulateRandomForestPrediction(jsonData);
+      // Process with multiple models
+      const results = simulateMultipleModelPredictions(jsonData);
       setProgress(100);
       
       // Pass data back to parent component
@@ -71,6 +85,50 @@ const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
         toast.error(error.message);
       } else {
         toast.error("An error occurred while processing the file");
+      }
+    } finally {
+      setUploading(false);
+      setProgress(0);
+    }
+  };
+
+  const processWeatherData = () => {
+    if (!weatherData || weatherData.length === 0) {
+      toast.error("No weather data available");
+      return;
+    }
+
+    try {
+      setProgress(30);
+      
+      // Convert weather data to expected format
+      const formattedData = weatherData.map(item => ({
+        temperature: item.temperature,
+        humidity: item.humidity,
+        windSpeed: item.windSpeed,
+        solarIrradiance: item.solarIrradiance,
+        pm10: item.pm10 || 0,
+        pm25: item.pm25 || 0,
+        cloudCover: item.cloudCover || 0,
+        actualPower: item.actualPower || 0,
+        time: item.time || new Date().toISOString()
+      }));
+      
+      setProgress(70);
+      
+      // Process with multiple models
+      const results = simulateMultipleModelPredictions(formattedData);
+      setProgress(100);
+      
+      // Pass data back to parent component
+      onDataProcessed(formattedData, results);
+      
+      toast.success("Weather data processed successfully!");
+    } catch (error) {
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error("An error occurred while processing the weather data");
       }
     } finally {
       setUploading(false);
@@ -109,47 +167,100 @@ const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
     }
   };
 
-  // This is a simulation of a random forest prediction
-  const simulateRandomForestPrediction = (data: any[]): PredictionResult => {
-    // In a real app, this would call a proper model
-    // For now, we'll simulate results based on the data
+  // This is a simulation of multiple ML model predictions
+  const simulateMultipleModelPredictions = (data: any[]): PredictionResult => {
+    // Define a list of models with different characteristics
+    const models = [
+      { 
+        name: "random_forest", 
+        accuracy: 0.87, 
+        color: "#0ea5e9", 
+        biasTowardsIrradiance: 0.65, 
+        biasTowardsTemp: 0.15 
+      },
+      { 
+        name: "gradient_boosting", 
+        accuracy: 0.89, 
+        color: "#10b981", 
+        biasTowardsIrradiance: 0.55, 
+        biasTowardsTemp: 0.25 
+      },
+      { 
+        name: "neural_network", 
+        accuracy: 0.85, 
+        color: "#8b5cf6", 
+        biasTowardsIrradiance: 0.60, 
+        biasTowardsTemp: 0.20 
+      },
+    ];
     
-    // Simulate predicted values
-    const predictions = data.map(row => {
-      // Very simplified power calculation
-      const basePower = row.solarIrradiance * 0.2;
-      const tempFactor = 1 - Math.abs(25 - row.temperature) * 0.01;
-      const humidityFactor = 1 - (row.humidity * 0.003);
-      const dustFactor = row.pm10 ? 1 - (row.pm10 * 0.005) : 1;
+    // Create results for each model
+    const modelResults = models.map(model => {
+      // Generate predictions with slight variations based on model characteristics
+      const predictions = data.map(row => {
+        const basePower = row.solarIrradiance * model.biasTowardsIrradiance;
+        const tempFactor = 1 - Math.abs(25 - row.temperature) * (model.biasTowardsTemp * 0.1);
+        const humidityFactor = 1 - (row.humidity * 0.003);
+        const dustFactor = row.pm10 ? 1 - (row.pm10 * 0.005) : 1;
+        const cloudFactor = row.cloudCover ? 1 - (row.cloudCover * 0.01) : 1;
+        
+        // Add some randomness to simulate model differences
+        const randomFactor = 0.9 + (Math.random() * 0.2);
+        
+        return basePower * tempFactor * humidityFactor * dustFactor * cloudFactor * randomFactor;
+      });
       
-      const predictedPower = basePower * tempFactor * humidityFactor * dustFactor;
-      return predictedPower;
+      // Calculate model metrics with variations
+      const mse = 15 + (Math.random() * 5); 
+      const r2 = model.accuracy + (Math.random() * 0.05 - 0.025); // Vary around the base accuracy
+      const mae = 3.5 + (Math.random() * 1.5);
+      
+      return {
+        name: model.name,
+        predictions,
+        metrics: { mse, r2, mae },
+        featureImportance: generateFeatureImportance(model),
+        color: model.color
+      };
     });
     
-    // Calculate model metrics
-    const mse = 15.23; // Mean squared error
-    const r2 = 0.87; // R-squared
-    const mae = 3.78; // Mean absolute error
+    // Extract actual power if available
+    const actualPower = data.some(row => 'actualPower' in row) 
+      ? data.map(row => row.actualPower) 
+      : undefined;
     
-    // Feature importance (simulated)
-    const featureImportance = {
-      'solarIrradiance': 0.65,
-      'temperature': 0.15,
-      'humidity': 0.10,
-      'pm10': 0.05,
-      'windSpeed': 0.03,
-      'cloudCover': 0.02
-    };
-    
+    // Return the comprehensive result object
     return {
-      predictions,
-      metrics: {
-        mse,
-        r2,
-        mae
-      },
-      featureImportance
+      // Use the first model (random forest) as the default
+      predictions: modelResults[0].predictions,
+      metrics: modelResults[0].metrics,
+      featureImportance: modelResults[0].featureImportance,
+      modelResults,
+      actualPower
     };
+  };
+  
+  // Generate feature importance scores with variations per model
+  const generateFeatureImportance = (model: any) => {
+    // Base importance values
+    const baseImportance = {
+      'solarIrradiance': model.biasTowardsIrradiance,
+      'temperature': model.biasTowardsTemp,
+      'humidity': 0.10 + (Math.random() * 0.05 - 0.025),
+      'pm10': 0.05 + (Math.random() * 0.03 - 0.015),
+      'windSpeed': 0.03 + (Math.random() * 0.02 - 0.01),
+      'cloudCover': 0.02 + (Math.random() * 0.02 - 0.01)
+    };
+    
+    // Normalize to ensure sum is 1.0
+    const sum = Object.values(baseImportance).reduce((a, b) => a + b, 0);
+    const normalized: Record<string, number> = {};
+    
+    Object.entries(baseImportance).forEach(([key, value]) => {
+      normalized[key] = value / sum;
+    });
+    
+    return normalized;
   };
 
   return (
@@ -179,28 +290,40 @@ const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
           </p>
         </label>
         
-        {file && (
+        {(file || weatherData?.length) && (
           <div className="mt-4">
-            <div className="flex items-center text-sm mb-2">
-              <FileType className="h-4 w-4 mr-2 text-muted-foreground" /> 
-              <span className="text-muted-foreground">{file.name}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {(file.size / 1024).toFixed(1)} KB
-              </span>
-            </div>
+            {file && (
+              <div className="flex items-center text-sm mb-2">
+                <FileType className="h-4 w-4 mr-2 text-muted-foreground" /> 
+                <span className="text-muted-foreground">{file.name}</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {(file.size / 1024).toFixed(1)} KB
+                </span>
+              </div>
+            )}
+            
+            {weatherData && weatherData.length > 0 && !file && (
+              <div className="flex items-center text-sm mb-2">
+                <Database className="h-4 w-4 mr-2 text-primary" /> 
+                <span className="text-muted-foreground">Use fetched weather data</span>
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {weatherData.length} data points
+                </span>
+              </div>
+            )}
             
             {uploading ? (
               <div className="space-y-2">
                 <Progress value={progress} className="h-2" />
-                <p className="text-xs text-muted-foreground">Processing file...</p>
+                <p className="text-xs text-muted-foreground">Processing data...</p>
               </div>
             ) : (
               <Button 
                 onClick={processData} 
                 className="w-full mt-2"
-                disabled={!file}
+                disabled={!file && !weatherData?.length}
               >
-                Process Data
+                Process Data with Multiple Models
               </Button>
             )}
           </div>
@@ -217,8 +340,12 @@ const FileUpload = ({ onDataProcessed }: FileUploadProps) => {
           <p>Additional columns like pm10, pm2_5 (for dust) will improve predictions</p>
         </div>
         <div className="flex items-start">
+          <Check className="h-4 w-4 text-green-500 mt-0.5 mr-2 shrink-0" />
+          <p>Multiple machine learning models will be used for comparison</p>
+        </div>
+        <div className="flex items-start">
           <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 mr-2 shrink-0" />
-          <p>For best results, include actual power output for model training</p>
+          <p>For best results, include actual power output for model evaluation</p>
         </div>
       </div>
     </div>

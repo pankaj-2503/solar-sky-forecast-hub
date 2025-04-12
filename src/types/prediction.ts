@@ -5,8 +5,30 @@ export interface PredictionMetrics {
   mae: number;  // Mean Absolute Error
 }
 
-export interface PredictionResult {
-  predictions: number[];  // Array of predicted power outputs
+export interface ModelResult {
+  name: string;
+  predictions: number[];
   metrics: PredictionMetrics;
-  featureImportance: Record<string, number>;  // Feature importance scores
+  featureImportance: Record<string, number>;
+  color: string;
+}
+
+export interface PredictionResult {
+  predictions: number[];  // Array of predicted power outputs (default model)
+  metrics: PredictionMetrics;
+  featureImportance: Record<string, number>;
+  modelResults: ModelResult[];  // Results from multiple models
+  actualPower?: number[];  // Actual power values if available
+}
+
+export interface WeatherPredictionData {
+  temperature: number;
+  humidity: number;
+  windSpeed: number;
+  solarIrradiance: number;
+  pm10?: number;
+  pm25?: number;
+  cloudCover?: number;
+  actualPower?: number;
+  time?: string;
 }

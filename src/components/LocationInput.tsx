@@ -7,9 +7,11 @@ import { toast } from "sonner";
 
 interface LocationInputProps {
   onLocationSubmit: (lat: number, lon: number) => void;
+  title?: string;
+  subtitle?: string;
 }
 
-const LocationInput = ({ onLocationSubmit }: LocationInputProps) => {
+const LocationInput = ({ onLocationSubmit, title = "Enter Location Coordinates", subtitle }: LocationInputProps) => {
   const [latitude, setLatitude] = useState<string>('');
   const [longitude, setLongitude] = useState<string>('');
 
@@ -64,7 +66,8 @@ const LocationInput = ({ onLocationSubmit }: LocationInputProps) => {
   return (
     <div className="w-full max-w-3xl mx-auto animate-fade-in">
       <div className="card-glass p-4 md:p-6">
-        <h2 className="text-lg font-medium mb-4">Enter Location Coordinates</h2>
+        <h2 className="text-lg font-medium mb-4">{title}</h2>
+        {subtitle && <p className="text-sm text-muted-foreground mb-4">{subtitle}</p>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
