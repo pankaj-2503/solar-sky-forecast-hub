@@ -1,4 +1,3 @@
-
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,16 +12,13 @@ interface PredictionResultsProps {
 }
 
 const PredictionResults = ({ data, results }: PredictionResultsProps) => {
-  // Combine original data with predictions from all models
   const combinedData = data.map((item, index) => {
     const dataPoint: any = { ...item, index: index + 1 };
     
-    // Add prediction from each model
     results.modelResults.forEach(model => {
       dataPoint[`${model.name}`] = model.predictions[index];
     });
     
-    // Add actual power if available
     if (results.actualPower) {
       dataPoint.actualPower = results.actualPower[index];
     }
@@ -30,26 +26,22 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
     return dataPoint;
   });
   
-  // Create data for feature importance chart
   const featureImportanceData = Object.entries(results.featureImportance).map(([feature, importance]) => ({
     feature,
-    importance: importance * 100 // Convert to percentage
+    importance: importance * 100
   })).sort((a, b) => b.importance - a.importance);
 
-  // Create comparative model data for radar chart
   const modelMetricsData = results.modelResults.map(model => ({
     model: model.name,
-    r2: model.metrics.r2 * 100, // Convert to percentage
-    accuracy: (1 - model.metrics.mse / 100) * 100, // Simplified accuracy metric
-    efficiency: (1 - model.metrics.mae / 10) * 100, // Efficiency metric
+    r2: model.metrics.r2 * 100,
+    accuracy: (1 - model.metrics.mse / 100) * 100,
+    efficiency: (1 - model.metrics.mae / 10) * 100,
   }));
-  
-  // Format name for display
+
   const formatModelName = (name: string) => {
     return name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   };
-  
-  // Get feature icon based on parameter name
+
   const getFeatureIcon = (feature: string) => {
     switch (feature.toLowerCase()) {
       case 'temperature':
@@ -63,6 +55,8 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
       case 'pm10':
         return <Gauge className="h-4 w-4 text-amber-500" />;
       case 'pm25':
+        return <Gauge className="h-4 w-4 text-orange-500" />;
+      case 'pm2.5':
         return <Gauge className="h-4 w-4 text-orange-500" />;
       case 'cloudcover':
         return <CloudIcon className="h-4 w-4 text-gray-500" />;
@@ -250,7 +244,9 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                   dataKey="feature"
                   tick={{ fontSize: 12 }}
                   width={120}
-                  tickFormatter={(value) => value.charAt(0).toUpperCase() + value.slice(1)}
+                  tickFormatter={(value) => {
+                    return value === 'pm25' ? 'PM2.5' : value.charAt(0).toUpperCase() + value.slice(1)
+                  }}
                 />
                 <Tooltip
                   formatter={(value) => {
@@ -277,7 +273,9 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                   {getFeatureIcon(item.feature)}
                 </div>
                 <div>
-                  <p className="text-xs font-medium capitalize">{item.feature}</p>
+                  <p className="text-xs font-medium capitalize">
+                    {item.feature === 'pm25' ? 'PM2.5' : item.feature}
+                  </p>
                   <p className="text-sm font-bold">{item.importance.toFixed(1)}%</p>
                 </div>
               </div>
@@ -286,7 +284,7 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
           
           <p className="text-sm text-muted-foreground mt-4">
             Higher values indicate more significant impact on the model's power output predictions.
-            {featureImportanceData.some(item => item.feature.toLowerCase().includes('pm')) && 
+            {featureImportanceData.some(item => ['pm10', 'pm25'].includes(item.feature.toLowerCase())) && 
               " Dust metrics (PM10, PM2.5) show substantial influence on solar panel efficiency."}
           </p>
         </CardContent>
