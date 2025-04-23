@@ -65,6 +65,17 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
     }
   };
 
+  const calculateMaxDustImpact = () => {
+    const maxPM10 = Math.max(...data.map(row => row.pm10 || 0));
+    const maxPM25 = Math.max(...data.map(row => row.pm25 || 0));
+    
+    const pm10Impact = maxPM10 * 0.005; // 0.5% per unit
+    const pm25Impact = maxPM25 * 0.01;  // 1% per unit
+    
+    const maxImpact = Math.max(pm10Impact, pm25Impact) * 100;
+    return Math.round(maxImpact);
+  };
+
   return (
     <div className="mt-8 space-y-6 animate-fade-in">
       <Card className="data-card-gradient">
@@ -363,7 +374,7 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                 <h4 className="font-medium text-sm">Dust Accumulation Impact</h4>
                 <p className="text-sm text-muted-foreground mt-1">
                   Based on this analysis, PM10 and PM2.5 dust particles can reduce solar power output by 
-                  up to {Math.round(15 + Math.random() * 10)}% under high concentration conditions.
+                  up to {calculateMaxDustImpact()}% under high concentration conditions.
                   Regular cleaning can help maintain optimal efficiency.
                 </p>
               </div>
