@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FileWarning, Database, Sun, ArrowDown, ChevronDown, CloudSun, Wind, Thermometer, Droplets } from "lucide-react";
 import FileUpload from "@/components/FileUpload";
 import LocationInput from "@/components/LocationInput";
@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { fetchHistoricalWeatherData } from "@/services/weatherService";
 
 const PowerPrediction = () => {
   const [uploadedData, setUploadedData] = useState<any[] | null>(null);
   const [predictionResults, setPredictionResults] = useState<PredictionResult | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherPredictionData[] | null>(null);
   const [activeTab, setActiveTab] = useState<string>("upload");
+  const [loading, setLoading] = useState<boolean>(false);
 
   const handleDataProcessed = (data: any[], results: PredictionResult) => {
     setUploadedData(data);
@@ -24,78 +26,17 @@ const PowerPrediction = () => {
 
   const handleLocationSubmit = async (lat: number, lon: number) => {
     try {
-      // Generate simulated weather data based on location
-      const simulatedData = generateWeatherDataFromLocation(lat, lon);
-      setWeatherData(simulatedData);
-      toast.success(`Generated weather data for lat: ${lat.toFixed(2)}, lon: ${lon.toFixed(2)}`);
+      setLoading(true);
+      // Fetch real historical weather data based on location
+      const historicalData = await fetchHistoricalWeatherData(lat, lon);
+      setWeatherData(historicalData);
+      toast.success(`Fetched 24 hours of weather data for lat: ${lat.toFixed(2)}, lon: ${lon.toFixed(2)}`);
     } catch (error) {
-      console.error("Error generating weather data:", error);
-      toast.error("Failed to generate weather data");
+      console.error("Error fetching historical weather data:", error);
+      toast.error("Failed to fetch historical weather data");
+    } finally {
+      setLoading(false);
     }
-  };
-
-  // Function to generate weather data based on location
-  const generateWeatherDataFromLocation = (lat: number, lon: number): WeatherPredictionData[] => {
-    // Generate 24 hours of simulated weather data
-    const now = new Date();
-    const data: WeatherPredictionData[] = [];
-    
-    // Use latitude to simulate climate variation (higher latitudes = cooler)
-    const baseTempFactor = Math.max(0, 1 - Math.abs(lat) / 90) * 30 + 5; // 5°C to 35°C
-    
-    // Use longitude for time offset to simulate day/night cycle
-    const timeOffset = Math.floor(lon / 15); // rough approximation of time zones
-    
-    // Different regions have different dust levels
-    // Desert regions tend to have higher dust concentrations
-    const isDesertRegion = (lat > 15 && lat < 35) || (lat < -15 && lat > -35);
-    const isIndustrialRegion = (lat > 30 && lat < 60) && (lon > -10 && lon < 40); // Europe/Industrial
-    const basePM10 = isDesertRegion ? 50 : (isIndustrialRegion ? 30 : 15);
-    const basePM25 = isDesertRegion ? 25 : (isIndustrialRegion ? 20 : 8);
-    
-    for (let i = 0; i < 24; i++) {
-      const hour = (now.getHours() + i) % 24;
-      const time = new Date(now);
-      time.setHours(hour);
-      
-      // Simulate temperature curve over the day
-      const hourFactor = Math.sin((hour - 6 + timeOffset) * (Math.PI / 12));
-      const temperature = baseTempFactor + hourFactor * 10 * Math.random();
-      
-      // Higher humidity in the early morning, lower during day
-      const humidity = 50 + (hour < 6 ? 30 : 0) + Math.random() * 20;
-      
-      // Wind tends to pick up during the day
-      const windSpeed = 2 + (hour > 8 && hour < 18 ? 5 : 0) + Math.random() * 3;
-      
-      // Solar irradiance follows daylight pattern
-      const daylight = hour >= 6 && hour <= 18;
-      const peakHour = Math.abs(hour - 12);
-      const solarIrradiance = daylight ? Math.max(0, 1000 * (1 - peakHour / 12) * (1 - Math.abs(lat) / 90)) : 0;
-      
-      // PM10 dust level varies by region, time of day, etc.
-      const daytimePMFactor = (hour > 8 && hour < 18) ? 1.2 : 0.8; // More dust during day
-      const pm10 = basePM10 * daytimePMFactor + (Math.random() * 15);
-      
-      // PM2.5 - often correlated with PM10 but at lower values
-      const pm25 = basePM25 * daytimePMFactor + (Math.random() * 10);
-      
-      // Cloud cover - varies by region and time
-      const cloudCover = Math.random() * 100;
-      
-      data.push({
-        temperature,
-        humidity,
-        windSpeed,
-        solarIrradiance,
-        pm10,
-        pm25,
-        cloudCover,
-        time: time.toISOString()
-      });
-    }
-    
-    return data;
   };
 
   return (
@@ -118,7 +59,7 @@ const PowerPrediction = () => {
                 Prediction Models
               </CardTitle>
               <CardDescription>
-                Choose how you want to provide meteorological data for prediction
+                Fetch real-time meteorological data for prediction
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -139,8 +80,15 @@ const PowerPrediction = () => {
                   <LocationInput 
                     onLocationSubmit={handleLocationSubmit} 
                     title="Enter Location for Weather Data"
-                    subtitle="We'll generate meteorological data based on your coordinates including regional dust levels"
+                    subtitle="We'll fetch real meteorological data for the past 24 hours including regional dust levels"
                   />
+                  
+                  {loading && (
+                    <div className="mt-4 p-4 text-center">
+                      <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-2"></div>
+                      <p className="text-sm text-muted-foreground">Fetching historical weather data...</p>
+                    </div>
+                  )}
                   
                   {weatherData && weatherData.length > 0 && (
                     <div className="mt-6">
@@ -148,7 +96,7 @@ const PowerPrediction = () => {
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm flex items-center">
                             <Database className="mr-2 h-4 w-4" />
-                            Weather Data Generated
+                            Real Weather Data Fetched
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -161,21 +109,21 @@ const PowerPrediction = () => {
                                 <Thermometer className="h-3 w-3 mr-1 text-red-500" />
                                 <p className="text-muted-foreground">Temperature</p>
                               </div>
-                              <p className="font-medium">{weatherData[0].temperature.toFixed(1)}°C</p>
+                              <p className="font-medium">{weatherData[weatherData.length-1].temperature.toFixed(1)}°C</p>
                             </div>
                             <div className="bg-background rounded p-2">
                               <div className="flex items-center mb-1">
                                 <Sun className="h-3 w-3 mr-1 text-yellow-500" />
                                 <p className="text-muted-foreground">Irradiance</p>
                               </div>
-                              <p className="font-medium">{weatherData[0].solarIrradiance.toFixed(0)} W/m²</p>
+                              <p className="font-medium">{weatherData[weatherData.length-1].solarIrradiance.toFixed(0)} W/m²</p>
                             </div>
                             <div className="bg-background rounded p-2">
                               <div className="flex items-center mb-1">
                                 <CloudSun className="h-3 w-3 mr-1 text-amber-500" />
                                 <p className="text-muted-foreground">PM10</p>
                               </div>
-                              <p className="font-medium">{weatherData[0].pm10?.toFixed(1)} µg/m³</p>
+                              <p className="font-medium">{weatherData[weatherData.length-1].pm10?.toFixed(1)} µg/m³</p>
                             </div>
                           </div>
                           
@@ -185,28 +133,28 @@ const PowerPrediction = () => {
                                 <Droplets className="h-3 w-3 mr-1 text-blue-500" />
                                 <p className="text-muted-foreground">Humidity</p>
                               </div>
-                              <p className="font-medium">{weatherData[0].humidity.toFixed(1)}%</p>
+                              <p className="font-medium">{weatherData[weatherData.length-1].humidity.toFixed(1)}%</p>
                             </div>
                             <div className="bg-background rounded p-2">
                               <div className="flex items-center mb-1">
                                 <Wind className="h-3 w-3 mr-1 text-cyan-500" />
                                 <p className="text-muted-foreground">Wind</p>
                               </div>
-                              <p className="font-medium">{weatherData[0].windSpeed.toFixed(1)} m/s</p>
+                              <p className="font-medium">{weatherData[weatherData.length-1].windSpeed.toFixed(1)} m/s</p>
                             </div>
                             <div className="bg-background rounded p-2">
                               <div className="flex items-center mb-1">
                                 <CloudSun className="h-3 w-3 mr-1 text-gray-500" />
                                 <p className="text-muted-foreground">PM2.5</p>
                               </div>
-                              <p className="font-medium">{weatherData[0].pm25?.toFixed(1)} µg/m³</p>
+                              <p className="font-medium">{weatherData[weatherData.length-1].pm25?.toFixed(1)} µg/m³</p>
                             </div>
                             <div className="bg-background rounded p-2">
                               <div className="flex items-center mb-1">
                                 <CloudSun className="h-3 w-3 mr-1 text-blue-300" />
                                 <p className="text-muted-foreground">Cloud</p>
                               </div>
-                              <p className="font-medium">{weatherData[0].cloudCover?.toFixed(1)}%</p>
+                              <p className="font-medium">{weatherData[weatherData.length-1].cloudCover?.toFixed(1)}%</p>
                             </div>
                           </div>
                           

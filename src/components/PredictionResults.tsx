@@ -1,3 +1,4 @@
+
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,6 +26,16 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
     
     return dataPoint;
   });
+  
+  // Format date for X-axis if time is available
+  const formatXAxis = (value: number) => {
+    // If we have timestamp data in the original dataset
+    if (data[value-1] && data[value-1].time) {
+      const date = new Date(data[value-1].time);
+      return date.getHours() + ':00';
+    }
+    return value;
+  };
   
   const featureImportanceData = Object.entries(results.featureImportance).map(([feature, importance]) => ({
     feature,
@@ -76,6 +87,9 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
     return Math.round(maxImpact);
   };
 
+  // Try to determine if we have time-based data
+  const hasTimeData = data && data.length > 0 && data[0].time !== undefined;
+
   return (
     <div className="mt-8 space-y-6 animate-fade-in">
       <Card className="data-card-gradient">
@@ -112,19 +126,30 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
                   data={combinedData}
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 25 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
                     dataKey="index" 
                     tick={{ fontSize: 12 }}
-                    label={{ value: 'Sample Index', position: 'insideBottom', offset: -5 }}
+                    tickFormatter={hasTimeData ? formatXAxis : undefined}
+                    label={{ 
+                      value: hasTimeData ? 'Time (hours)' : 'Sample Index', 
+                      position: 'insideBottom', 
+                      offset: -5 
+                    }}
                   />
                   <YAxis
-                    label={{ value: 'Power (W)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }}
+                    label={{ 
+                      value: 'Power Output (W/m²)', 
+                      angle: -90, 
+                      position: 'insideLeft', 
+                      style: { textAnchor: 'middle' },
+                      offset: 10
+                    }}
                     tick={{ fontSize: 12 }}
                   />
-                  <Tooltip />
+                  <Tooltip formatter={(value) => [`${value} W/m²`, 'Power Output']} />
                   <Legend />
                   
                   {results.modelResults.map((model) => (
@@ -161,7 +186,7 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                 <RadarChart cx="50%" cy="50%" outerRadius="80%" data={modelMetricsData}>
                   <PolarGrid />
                   <PolarAngleAxis dataKey="model" tickFormatter={formatModelName} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
                   <Radar name="R² Score" dataKey="r2" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.6} />
                   <Radar name="Accuracy" dataKey="accuracy" stroke="#10b981" fill="#10b981" fillOpacity={0.6} />
                   <Radar name="Efficiency" dataKey="efficiency" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.6} />
@@ -177,8 +202,8 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                     <TableRow>
                       <TableHead>Model</TableHead>
                       <TableHead className="text-right">R² Score</TableHead>
-                      <TableHead className="text-right">MAE</TableHead>
-                      <TableHead className="text-right">MSE</TableHead>
+                      <TableHead className="text-right">MAE (W/m²)</TableHead>
+                      <TableHead className="text-right">MSE (W/m²)²</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -215,11 +240,11 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                 <div className="flex justify-between mt-2 text-xs">
                   <div>
                     <p className="text-muted-foreground">MAE</p>
-                    <p className="font-medium">{model.metrics.mae.toFixed(2)}</p>
+                    <p className="font-medium">{model.metrics.mae.toFixed(2)} W/m²</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">MSE</p>
-                    <p className="font-medium">{model.metrics.mse.toFixed(2)}</p>
+                    <p className="font-medium">{model.metrics.mse.toFixed(2)} (W/m²)²</p>
                   </div>
                 </div>
               </div>
@@ -249,6 +274,7 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                   tick={{ fontSize: 12 }}
                   domain={[0, 100]}
                   tickFormatter={(value) => `${value}%`}
+                  label={{ value: 'Importance (%)', position: 'insideBottom', offset: -5 }}
                 />
                 <YAxis
                   type="category"
@@ -323,15 +349,29 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                       temperature: item.temperature,
                       power: results.modelResults[0].predictions[i]
                     }))}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="index" />
-                    <YAxis yAxisId="left" orientation="left" stroke="#ef4444" domain={['auto', 'auto']} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" domain={['auto', 'auto']} />
-                    <Tooltip />
+                    <XAxis 
+                      dataKey="index"
+                      tickFormatter={hasTimeData ? formatXAxis : undefined}
+                      label={{ 
+                        value: hasTimeData ? 'Time (hours)' : 'Sample Index', 
+                        position: 'insideBottom', 
+                        offset: -5 
+                      }}
+                    />
+                    <YAxis yAxisId="left" orientation="left" stroke="#ef4444" domain={['auto', 'auto']} 
+                          label={{ value: 'Temperature (°C)', angle: -90, position: 'insideLeft' }} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" domain={['auto', 'auto']} 
+                          label={{ value: 'Power (W/m²)', angle: 90, position: 'insideRight' }} />
+                    <Tooltip formatter={(value, name) => [
+                      `${value} ${name === 'temperature' ? '°C' : 'W/m²'}`,
+                      name === 'temperature' ? 'Temperature' : 'Power Output'
+                    ]}/>
                     <Legend />
-                    <Line yAxisId="left" type="monotone" dataKey="temperature" stroke="#ef4444" name="Temperature (°C)" />
-                    <Line yAxisId="right" type="monotone" dataKey="power" stroke="#0ea5e9" name="Power (W)" />
+                    <Line yAxisId="left" type="monotone" dataKey="temperature" stroke="#ef4444" name="Temperature" />
+                    <Line yAxisId="right" type="monotone" dataKey="power" stroke="#0ea5e9" name="Power Output" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -350,15 +390,29 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                       pm: item.pm10 || item.pm25 || 0,
                       power: results.modelResults[0].predictions[i]
                     }))}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="index" />
-                    <YAxis yAxisId="left" orientation="left" stroke="#f59e0b" domain={['auto', 'auto']} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" domain={['auto', 'auto']} />
-                    <Tooltip />
+                    <XAxis 
+                      dataKey="index"
+                      tickFormatter={hasTimeData ? formatXAxis : undefined}
+                      label={{ 
+                        value: hasTimeData ? 'Time (hours)' : 'Sample Index', 
+                        position: 'insideBottom', 
+                        offset: -5 
+                      }}
+                    />
+                    <YAxis yAxisId="left" orientation="left" stroke="#f59e0b" domain={['auto', 'auto']} 
+                          label={{ value: 'PM Level (µg/m³)', angle: -90, position: 'insideLeft' }} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" domain={['auto', 'auto']} 
+                          label={{ value: 'Power (W/m²)', angle: 90, position: 'insideRight' }} />
+                    <Tooltip formatter={(value, name) => [
+                      `${value} ${name === 'pm' ? 'µg/m³' : 'W/m²'}`, 
+                      name === 'pm' ? 'PM Level' : 'Power Output'
+                    ]}/>
                     <Legend />
-                    <Line yAxisId="left" type="monotone" dataKey="pm" stroke="#f59e0b" name="PM Level (µg/m³)" />
-                    <Line yAxisId="right" type="monotone" dataKey="power" stroke="#0ea5e9" name="Power (W)" />
+                    <Line yAxisId="left" type="monotone" dataKey="pm" stroke="#f59e0b" name="PM Level" />
+                    <Line yAxisId="right" type="monotone" dataKey="power" stroke="#0ea5e9" name="Power Output" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
