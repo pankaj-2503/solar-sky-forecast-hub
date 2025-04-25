@@ -28,13 +28,13 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
   });
   
   // Format date for X-axis if time is available
-  const formatXAxis = (value: number) => {
+  const formatXAxis = (value: any): string => {
     // If we have timestamp data in the original dataset
     if (data[value-1] && data[value-1].time) {
       const date = new Date(data[value-1].time);
       return date.getHours() + ':00';
     }
-    return value;
+    return String(value);
   };
   
   const featureImportanceData = Object.entries(results.featureImportance).map(([feature, importance]) => ({
@@ -273,7 +273,7 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
                   type="number" 
                   tick={{ fontSize: 12 }}
                   domain={[0, 100]}
-                  tickFormatter={(value) => `${value}%`}
+                  tickFormatter={(value) => `${String(value)}%`}
                   label={{ value: 'Importance (%)', position: 'insideBottom', offset: -5 }}
                 />
                 <YAxis
