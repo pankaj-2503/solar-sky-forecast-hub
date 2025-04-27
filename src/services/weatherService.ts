@@ -1,8 +1,9 @@
+
 import { WeatherData, AirQuality } from "@/types/weather";
 import { WeatherPredictionData } from "@/types/prediction";
 
 // OpenWeatherMap API endpoints
-const OWM_API_KEY = "1d40c931636f4c9759a99f7d7b1cc376"; // Updated API key
+const OWM_API_KEY = "5d8d1cb6359dd5cce84d75218d43402f"; // Updated API key
 const OWM_BASE_URL = "https://api.openweathermap.org/data/2.5";
 const OWM_ONE_CALL_URL = "https://api.openweathermap.org/data/3.0/onecall";
 

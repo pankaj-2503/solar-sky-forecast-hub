@@ -1,3 +1,4 @@
+
 import * as tf from '@tensorflow/tfjs';
 import { ModelResult, PredictionMetrics, PredictionResult } from '@/types/prediction';
 
@@ -73,6 +74,12 @@ export const getOrCreateModel = async (modelName: string): Promise<tf.LayersMode
   // Try to load a pretrained model from localStorage
   try {
     const model = await tf.loadLayersModel(`localstorage://${modelName}`);
+    // Ensure the model is compiled
+    model.compile({
+      optimizer: 'adam',
+      loss: 'meanSquaredError',
+      metrics: ['mae']
+    });
     modelCache[modelName] = model;
     console.log(`Loaded existing model: ${modelName}`);
     return model;
@@ -198,7 +205,7 @@ export const trainModel = async (
     trainingData.map(row => [
       row.actualPower !== undefined
         ? row.actualPower
-        : row.solarIrradiance * 0.15 * (1 - row.cloudCover / 200)  // Simple estimate if actual not available
+        : row.solarIrradiance * 0.15 * (1 - (row.cloudCover || 0) / 200)  // Simple estimate if actual not available
     ])
   );
   
@@ -232,11 +239,23 @@ export const generatePredictions = async (
   const hasActualPower = data.some(row => row.actualPower !== undefined);
   const actualPower = hasActualPower ? data.map(row => row.actualPower) : undefined;
   
+  // Initialize models for all types if they don't exist
+  for (const config of modelConfigs) {
+    if (!modelCache[config.name]) {
+      await getOrCreateModel(config.name);
+    }
+  }
+  
   // Start with small training if requested
   if (includeTraining) {
-    // Train each model with a few epochs
-    for (const config of modelConfigs) {
-      await trainModel(config.name, data, 20);
+    try {
+      // Train each model with a few epochs
+      for (const config of modelConfigs) {
+        await trainModel(config.name, data, 20);
+      }
+    } catch (error) {
+      console.error("Error during model training:", error);
+      // Continue with fallback if training fails
     }
   }
   
@@ -408,60 +427,85 @@ const calculateR2 = (actual: number[], predicted: number[]): number => {
 
 // Add dust impact calculation based on ML model predictions
 const calculateDustImpact = (data: any[]): number => {
-  // Get baseline prediction without dust
-  const baselineData = data.map(item => ({
-    ...item,
-    pm10: 0,
-    pm25: 0
-  }));
-  
-  // Get prediction with actual dust levels
-  const dustData = data.map(item => ({
-    ...item,
-    pm10: item.pm10 || 0,
-    pm25: item.pm25 || 0
-  }));
-  
-  // Create tensors for both scenarios
-  const baselineTensor = tf.tensor2d(baselineData.map(row => [
-    row.solarIrradiance,
-    row.temperature,
-    row.humidity,
-    row.windSpeed,
-    0,  // pm10
-    0,  // pm25
-    row.cloudCover || 0
-  ]));
-  
-  const dustTensor = tf.tensor2d(dustData.map(row => [
-    row.solarIrradiance,
-    row.temperature,
-    row.humidity,
-    row.windSpeed,
-    row.pm10,
-    row.pm25,
-    row.cloudCover || 0
-  ]));
-  
-  // Get predictions for both scenarios
-  const baselinePredictions = modelCache['neural_network'].predict(baselineTensor) as tf.Tensor;
-  const dustPredictions = modelCache['neural_network'].predict(dustTensor) as tf.Tensor;
-  
-  // Calculate average impact
-  const baselineValues = Array.from(baselinePredictions.dataSync());
-  const dustValues = Array.from(dustPredictions.dataSync());
-  
-  const avgBaselinePower = baselineValues.reduce((a, b) => a + b, 0) / baselineValues.length;
-  const avgDustPower = dustValues.reduce((a, b) => a + b, 0) / dustValues.length;
-  
-  // Calculate percentage impact
-  const impactPercentage = ((avgBaselinePower - avgDustPower) / avgBaselinePower) * 100;
-  
-  // Clean up tensors
-  baselineTensor.dispose();
-  dustTensor.dispose();
-  baselinePredictions.dispose();
-  dustPredictions.dispose();
-  
-  return Math.min(Math.max(0, impactPercentage), 100); // Cap between 0-100%
+  try {
+    // Check if dust data exists
+    const hasDustData = data.some(item => (item.pm10 || 0) > 0 || (item.pm25 || 0) > 0);
+    if (!hasDustData) {
+      return 0; // No dust data to analyze
+    }
+    
+    // Make sure neural network model exists
+    if (!modelCache['neural_network']) {
+      // If model doesn't exist yet, use simplified calculation
+      const maxPM10 = Math.max(...data.map(item => item.pm10 || 0));
+      const maxPM25 = Math.max(...data.map(item => item.pm25 || 0));
+      
+      return Math.min(100, (maxPM10 * 0.3 + maxPM25 * 0.7));
+    }
+    
+    // Get baseline prediction without dust
+    const baselineData = data.map(item => ({
+      ...item,
+      pm10: 0,
+      pm25: 0
+    }));
+    
+    // Get prediction with actual dust levels
+    const dustData = data.map(item => ({
+      ...item,
+      pm10: item.pm10 || 0,
+      pm25: item.pm25 || 0
+    }));
+    
+    // Create tensors for both scenarios
+    const baselineTensor = tf.tensor2d(baselineData.map(row => [
+      row.solarIrradiance || 0,
+      row.temperature || 0,
+      row.humidity || 0,
+      row.windSpeed || 0,
+      0,  // pm10
+      0,  // pm25
+      row.cloudCover || 0
+    ]));
+    
+    const dustTensor = tf.tensor2d(dustData.map(row => [
+      row.solarIrradiance || 0,
+      row.temperature || 0,
+      row.humidity || 0,
+      row.windSpeed || 0,
+      row.pm10 || 0,
+      row.pm25 || 0,
+      row.cloudCover || 0
+    ]));
+    
+    // Get predictions for both scenarios
+    const baselinePredictions = modelCache['neural_network'].predict(baselineTensor) as tf.Tensor;
+    const dustPredictions = modelCache['neural_network'].predict(dustTensor) as tf.Tensor;
+    
+    // Calculate average impact
+    const baselineValues = Array.from(baselinePredictions.dataSync());
+    const dustValues = Array.from(dustPredictions.dataSync());
+    
+    const avgBaselinePower = baselineValues.reduce((a, b) => a + b, 0) / baselineValues.length;
+    const avgDustPower = dustValues.reduce((a, b) => a + b, 0) / dustValues.length;
+    
+    // Calculate percentage impact
+    const impactPercentage = avgBaselinePower > 0 ? 
+      ((avgBaselinePower - avgDustPower) / avgBaselinePower) * 100 : 0;
+    
+    // Clean up tensors
+    baselineTensor.dispose();
+    dustTensor.dispose();
+    baselinePredictions.dispose();
+    dustPredictions.dispose();
+    
+    return Math.min(Math.max(0, impactPercentage), 100); // Cap between 0-100%
+  } catch (error) {
+    console.error("Error calculating dust impact:", error);
+    // Fallback to simpler calculation
+    const avgPM10 = data.reduce((sum, item) => sum + (item.pm10 || 0), 0) / data.length;
+    const avgPM25 = data.reduce((sum, item) => sum + (item.pm25 || 0), 0) / data.length;
+    
+    return Math.min(50, avgPM10 * 0.3 + avgPM25 * 0.7);
+  }
 };
