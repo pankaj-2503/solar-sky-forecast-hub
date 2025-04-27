@@ -1,8 +1,8 @@
-
 import { WeatherData, AirQuality } from "@/types/weather";
+import { WeatherPredictionData } from "@/types/prediction";
 
 // OpenWeatherMap API endpoints
-const OWM_API_KEY = "9d7cde1f6d07ec55650544be1631307e"; // This is a public demo key for OpenWeatherMap
+const OWM_API_KEY = "1d40c931636f4c9759a99f7d7b1cc376"; // Updated API key
 const OWM_BASE_URL = "https://api.openweathermap.org/data/2.5";
 const OWM_ONE_CALL_URL = "https://api.openweathermap.org/data/3.0/onecall";
 
@@ -36,19 +36,21 @@ export const fetchWeatherData = async (
     const aqiData = await aqiResponse.json();
     const airQualityList = aqiData.list && aqiData.list.length > 0 ? aqiData.list[0] : null;
     
-    // Fetch solar radiation data from One Call API if available
-    // Note: This requires a paid subscription to OpenWeatherMap for the full OneCall API
+    // Fetch solar radiation data if available
     let solarIrradiance = 0;
     try {
       const oneCallResponse = await fetch(
-        `${OWM_ONE_CALL_URL}/timemachine?lat=${latitude}&lon=${longitude}&dt=${Math.floor(Date.now() / 1000)}&appid=${OWM_API_KEY}`
+        `${OWM_BASE_URL}/forecast?lat=${latitude}&lon=${longitude}&units=metric&appid=${OWM_API_KEY}`
       );
       
       if (oneCallResponse.ok) {
-        const oneCallData = await oneCallResponse.json();
-        // Extract solar radiation if available
-        if (oneCallData.data && oneCallData.data[0] && oneCallData.data[0].solar_radiation) {
-          solarIrradiance = oneCallData.data[0].solar_radiation || 0;
+        const forecastData = await oneCallResponse.json();
+        // Extract radiation if available or estimate
+        if (forecastData && forecastData.list && forecastData.list.length > 0) {
+          // Some versions of API include this data
+          if (forecastData.list[0].radiation) {
+            solarIrradiance = forecastData.list[0].radiation.global || 0;
+          }
         }
       } 
     } catch (error) {
@@ -98,8 +100,8 @@ export const fetchWeatherData = async (
 };
 
 // Function to estimate solar irradiance based on location and current time
-const estimateSolarIrradiance = (latitude: number, longitude: number): number => {
-  const now = new Date();
+function estimateSolarIrradiance(latitude: number, longitude: number, date?: Date): number {
+  const now = date || new Date();
   const hour = now.getHours();
   const minute = now.getMinutes();
   
@@ -151,7 +153,7 @@ const estimateSolarIrradiance = (latitude: number, longitude: number): number =>
   totalIrradiance = Math.max(0, totalIrradiance * (0.7 + Math.random() * 0.3));
   
   return totalIrradiance;
-};
+}
 
 // Calculate UV Index based on solar irradiance and latitude
 const calculateUVIndex = (solarIrradiance: number, latitude: number): number => {
@@ -216,96 +218,101 @@ const generateFallbackWeatherData = (latitude: number, longitude: number): Weath
   };
 };
 
-// Function to fetch historical weather data for the past 24 hours
+// Updated function to fetch historical weather data for the past 24 hours
 export const fetchHistoricalWeatherData = async (
   latitude: number,
   longitude: number
-): Promise<any[]> => {
+): Promise<WeatherPredictionData[]> => {
   console.log(`Fetching historical weather data for lat: ${latitude}, lon: ${longitude}`);
   
   try {
-    const historicalData = [];
-    const now = Math.floor(Date.now() / 1000);
-    const oneDayAgo = now - (24 * 60 * 60);
-    
-    // Create timestamps for each hour in the past 24 hours
-    const timestamps = [];
-    for (let i = 0; i < 24; i++) {
-      timestamps.push(oneDayAgo + i * 60 * 60);
-    }
-    
-    // Fetch historical data for each timestamp using OpenWeatherMap's One Call 3.0 API
-    // Note: This requires a paid subscription for full access, so we'll use a simulated approach
-    
-    // Instead of multiple API calls, we'll make one current call and extrapolate historical data
-    const currentResponse = await fetch(
-      `${OWM_BASE_URL}/weather?lat=${latitude}&lon=${longitude}&units=metric&appid=${OWM_API_KEY}`
+    // Use the 5 day / 3 hour forecast API which gives us recent data too
+    const forecastResponse = await fetch(
+      `${OWM_BASE_URL}/forecast?lat=${latitude}&lon=${longitude}&units=metric&appid=${OWM_API_KEY}`
     );
     
-    if (!currentResponse.ok) {
-      throw new Error(`Weather API error: ${currentResponse.status}`);
+    if (!forecastResponse.ok) {
+      throw new Error(`Weather API error: ${forecastResponse.status}`);
     }
     
-    const currentData = await currentResponse.json();
+    const forecastData = await forecastResponse.json();
     
-    // Also get air quality data
+    // Get air quality data
     const aqiResponse = await fetch(
-      `${OWM_BASE_URL}/air_pollution?lat=${latitude}&lon=${longitude}&appid=${OWM_API_KEY}`
+      `${OWM_BASE_URL}/air_pollution/forecast?lat=${latitude}&lon=${longitude}&appid=${OWM_API_KEY}`
     );
-    let currentPM10 = 0;
-    let currentPM25 = 0;
     
+    let aqiData: any = { list: [] };
     if (aqiResponse.ok) {
-      const aqiData = await aqiResponse.json();
-      if (aqiData.list && aqiData.list.length > 0) {
-        currentPM10 = aqiData.list[0].components.pm10 || 0;
-        currentPM25 = aqiData.list[0].components.pm2_5 || 0;
-      }
+      aqiData = await aqiResponse.json();
     }
     
-    // Generate realistic time series based on current conditions
-    timestamps.forEach((timestamp, index) => {
-      const date = new Date(timestamp * 1000);
-      const hour = date.getHours();
+    // Process and merge data from both APIs
+    const historicalData: WeatherPredictionData[] = [];
+    
+    // Take the first 8 data points (24 hours, since it's every 3 hours)
+    const dataPoints = forecastData.list.slice(0, 8);
+    
+    dataPoints.forEach((point: any, index: number) => {
+      const date = new Date(point.dt * 1000);
       
-      // Create realistic variations based on time of day
-      const hourFactor = Math.sin((hour - 6) * (Math.PI / 12));
-      const temperature = currentData.main.temp + hourFactor * 5 * Math.random();
+      // Find matching air quality data for this timestamp if available
+      const matchingAQI = aqiData.list?.find((aqi: any) => {
+        return Math.abs(aqi.dt - point.dt) < 10800; // Within 3 hours
+      });
       
-      // Solar irradiance follows daylight pattern
-      const daylight = hour >= 6 && hour <= 18;
-      const peakHour = Math.abs(hour - 12);
-      const solarIrradiance = daylight 
-        ? Math.max(0, 1000 * (1 - peakHour / 12) * (1 - Math.abs(latitude) / 90)) 
-        : 0;
-      
-      // Higher humidity in the early morning, lower during day
-      const humidity = currentData.main.humidity + (hour < 6 ? 10 : -5) + Math.random() * 10;
-      
-      // Wind tends to pick up during the day
-      const windSpeed = currentData.wind.speed + (hour > 8 && hour < 18 ? 2 : -1) + Math.random() * 2;
-      
-      // PM10 dust level varies by time of day
-      const daytimePMFactor = (hour > 8 && hour < 18) ? 1.2 : 0.8;
-      const pm10 = currentPM10 * (0.8 + (index / 24) * 0.4) * daytimePMFactor;
-      
-      // PM2.5 - often correlated with PM10 but at lower values
-      const pm25 = currentPM25 * (0.8 + (index / 24) * 0.4) * daytimePMFactor;
-      
-      // Cloud cover - varies by time
-      const cloudCover = currentData.clouds.all + (hour < 12 ? -10 : 10) * Math.random();
+      // Calculate solar irradiance based on weather and time
+      let solarIrradiance = 0;
+      if (point.sys && typeof point.sys.pod !== 'undefined') {
+        const isDaytime = point.sys.pod === 'd';
+        if (isDaytime) {
+          // Base value on cloud coverage
+          const cloudFactor = 1 - (point.clouds.all / 100);
+          solarIrradiance = 1000 * cloudFactor; // Max 1000 W/m² on clear day
+          
+          // Adjust by time of day using weather data timestamp
+          const hour = date.getHours();
+          const hourFactor = 1 - Math.abs(hour - 12) / 12; // Peak at noon
+          solarIrradiance *= Math.max(0.1, hourFactor);
+        }
+      } else {
+        // Fallback to estimating based on location
+        solarIrradiance = estimateSolarIrradiance(latitude, longitude, date);
+      }
       
       historicalData.push({
-        temperature: Math.round(temperature * 10) / 10,
-        humidity: Math.round(Math.min(100, Math.max(0, humidity))),
-        windSpeed: Math.round(Math.max(0, windSpeed) * 10) / 10,
+        temperature: point.main.temp,
+        humidity: point.main.humidity,
+        windSpeed: point.wind.speed,
         solarIrradiance: Math.round(solarIrradiance),
-        pm10: Math.round(pm10 * 10) / 10,
-        pm25: Math.round(pm25 * 10) / 10,
-        cloudCover: Math.round(Math.min(100, Math.max(0, cloudCover))),
+        pm10: matchingAQI?.components?.pm10 || 0,
+        pm25: matchingAQI?.components?.pm2_5 || 0,
+        cloudCover: point.clouds.all,
         time: date.toISOString()
       });
     });
+    
+    // If we didn't get enough data points, generate the rest
+    if (historicalData.length < 24) {
+      const existing = historicalData.length;
+      for (let i = existing; i < 24; i++) {
+        const lastPoint = historicalData[historicalData.length - 1];
+        const time = new Date(lastPoint.time);
+        time.setHours(time.getHours() + 1);
+        
+        // Create slightly varied data based on last point
+        historicalData.push({
+          temperature: lastPoint.temperature + (Math.random() * 2 - 1),
+          humidity: Math.min(100, Math.max(0, lastPoint.humidity + (Math.random() * 10 - 5))),
+          windSpeed: Math.max(0, lastPoint.windSpeed + (Math.random() * 2 - 1)),
+          solarIrradiance: Math.max(0, lastPoint.solarIrradiance + (Math.random() * 100 - 50)),
+          pm10: Math.max(0, lastPoint.pm10 + (Math.random() * 5 - 2.5)),
+          pm25: Math.max(0, lastPoint.pm25 + (Math.random() * 3 - 1.5)),
+          cloudCover: Math.min(100, Math.max(0, lastPoint.cloudCover + (Math.random() * 20 - 10))),
+          time: time.toISOString()
+        });
+      }
+    }
     
     return historicalData;
     

@@ -7,10 +7,10 @@ import PredictionResults from "@/components/PredictionResults";
 import { PredictionResult, WeatherPredictionData } from "@/types/prediction";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { fetchHistoricalWeatherData } from "@/services/weatherService";
+import { generatePredictions } from "@/services/mlModelService";
 
 const PowerPrediction = () => {
   const [uploadedData, setUploadedData] = useState<any[] | null>(null);
@@ -18,8 +18,31 @@ const PowerPrediction = () => {
   const [weatherData, setWeatherData] = useState<WeatherPredictionData[] | null>(null);
   const [activeTab, setActiveTab] = useState<string>("upload");
   const [loading, setLoading] = useState<boolean>(false);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
 
-  const handleDataProcessed = (data: any[], results: PredictionResult) => {
+  // Auto-refresh weather data every 30 minutes if enabled
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (autoRefresh && weatherData && weatherData.length > 0) {
+      // Get last used coordinates
+      const lastLat = weatherData[0].latitude || 0;
+      const lastLon = weatherData[0].longitude || 0;
+      
+      if (lastLat && lastLon) {
+        intervalId = setInterval(() => {
+          handleLocationSubmit(lastLat, lastLon);
+          toast.info("Refreshing weather data...");
+        }, 30 * 60 * 1000); // 30 minutes
+      }
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [autoRefresh, weatherData]);
+
+  const handleDataProcessed = async (data: any[], results: PredictionResult) => {
     setUploadedData(data);
     setPredictionResults(results);
   };
@@ -29,11 +52,45 @@ const PowerPrediction = () => {
       setLoading(true);
       // Fetch real historical weather data based on location
       const historicalData = await fetchHistoricalWeatherData(lat, lon);
-      setWeatherData(historicalData);
-      toast.success(`Fetched 24 hours of weather data for lat: ${lat.toFixed(2)}, lon: ${lon.toFixed(2)}`);
+      
+      // Add coordinates to data for possible refresh
+      const enhancedData = historicalData.map(item => ({
+        ...item,
+        latitude: lat,
+        longitude: lon
+      }));
+      
+      setWeatherData(enhancedData);
+      toast.success(`Fetched ${historicalData.length} hours of weather data for lat: ${lat.toFixed(2)}, lon: ${lon.toFixed(2)}`);
     } catch (error) {
       console.error("Error fetching historical weather data:", error);
       toast.error("Failed to fetch historical weather data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to process weather data with ML models
+  const processWeatherWithModels = async () => {
+    if (!weatherData || weatherData.length === 0) {
+      toast.error("No weather data available");
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      // Process with ML models
+      const results = await generatePredictions(weatherData, true);
+      
+      // Update state
+      setUploadedData(weatherData);
+      setPredictionResults(results);
+      
+      toast.success("Weather data analyzed successfully with machine learning models");
+    } catch (error) {
+      console.error("Error processing weather data:", error);
+      toast.error("Failed to analyze weather data");
     } finally {
       setLoading(false);
     }
@@ -47,7 +104,7 @@ const PowerPrediction = () => {
             Solar Power Prediction
           </h1>
           <p className="text-muted-foreground max-w-xl">
-            Compare multiple machine learning models to predict solar power output and analyze dust impact on PV performance
+            Dynamic ML models to predict solar power output and analyze dust impact on PV performance using real-time data
           </p>
         </div>
 
@@ -56,10 +113,10 @@ const PowerPrediction = () => {
             <CardHeader>
               <CardTitle className="flex items-center">
                 <Sun className="mr-2 h-5 w-5 text-yellow-500" />
-                Prediction Models
+                ML Prediction Models
               </CardTitle>
               <CardDescription>
-                Fetch real-time meteorological data for prediction
+                Fetch real-time meteorological data for machine learning prediction
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -86,7 +143,7 @@ const PowerPrediction = () => {
                   {loading && (
                     <div className="mt-4 p-4 text-center">
                       <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-2"></div>
-                      <p className="text-sm text-muted-foreground">Fetching historical weather data...</p>
+                      <p className="text-sm text-muted-foreground">Fetching real-time weather data...</p>
                     </div>
                   )}
                   
@@ -94,9 +151,19 @@ const PowerPrediction = () => {
                     <div className="mt-6">
                       <Card className="bg-muted/50">
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-sm flex items-center">
-                            <Database className="mr-2 h-4 w-4" />
-                            Real Weather Data Fetched
+                          <CardTitle className="text-sm flex items-center justify-between">
+                            <div className="flex items-center">
+                              <Database className="mr-2 h-4 w-4" />
+                              Real Weather Data Fetched
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={() => setAutoRefresh(!autoRefresh)}
+                              className="text-xs h-6 px-2"
+                            >
+                              {autoRefresh ? "Auto-refresh on" : "Auto-refresh off"}
+                            </Button>
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -162,13 +229,11 @@ const PowerPrediction = () => {
                             <Button 
                               size="sm" 
                               className="w-full"
-                              onClick={() => {
-                                setActiveTab("upload");
-                                toast.info("Use the Process Data button to analyze this weather data");
-                              }}
+                              onClick={processWeatherWithModels}
+                              disabled={loading}
                             >
                               <ArrowDown className="h-4 w-4 mr-2" />
-                              Proceed to predictions
+                              Analyze with Machine Learning Models
                             </Button>
                           </div>
                         </CardContent>
