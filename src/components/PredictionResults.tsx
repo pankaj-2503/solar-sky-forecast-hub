@@ -1,4 +1,3 @@
-
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,9 +26,7 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
     return dataPoint;
   });
   
-  // Format date for X-axis if time is available
   const formatXAxis = (value: any): string => {
-    // If we have timestamp data in the original dataset
     if (data[value-1] && data[value-1].time) {
       const date = new Date(data[value-1].time);
       return date.getHours() + ':00';
@@ -77,17 +74,9 @@ const PredictionResults = ({ data, results }: PredictionResultsProps) => {
   };
 
   const calculateMaxDustImpact = () => {
-    const maxPM10 = Math.max(...data.map(row => row.pm10 || 0));
-    const maxPM25 = Math.max(...data.map(row => row.pm25 || 0));
-    
-    const pm10Impact = maxPM10 * 0.005; // 0.5% per unit
-    const pm25Impact = maxPM25 * 0.01;  // 1% per unit
-    
-    const maxImpact = Math.max(pm10Impact, pm25Impact) * 100;
-    return Math.round(maxImpact);
+    return Math.round(results.metrics.dustImpact || 0);
   };
 
-  // Try to determine if we have time-based data
   const hasTimeData = data && data.length > 0 && data[0].time !== undefined;
 
   return (

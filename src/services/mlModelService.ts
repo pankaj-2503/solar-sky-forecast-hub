@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs';
 import { ModelResult, PredictionMetrics, PredictionResult } from '@/types/prediction';
 
@@ -305,10 +304,21 @@ export const generatePredictions = async (
     }
   }
   
+  // Calculate real dust impact
+  const dustImpact = calculateDustImpact(data);
+  
+  // Add dust impact to model results
+  modelResults.forEach(model => {
+    model.metrics.dustImpact = dustImpact;
+  });
+  
   // Return full prediction results
   return {
     predictions: modelResults[0].predictions,
-    metrics: modelResults[0].metrics,
+    metrics: {
+      ...modelResults[0].metrics,
+      dustImpact
+    },
     featureImportance: modelResults[0].featureImportance,
     modelResults,
     actualPower
@@ -394,4 +404,64 @@ const calculateR2 = (actual: number[], predicted: number[]): number => {
   
   if (totalSS === 0) return 0; // Avoid division by zero
   return 1 - (residualSS / totalSS);
+};
+
+// Add dust impact calculation based on ML model predictions
+const calculateDustImpact = (data: any[]): number => {
+  // Get baseline prediction without dust
+  const baselineData = data.map(item => ({
+    ...item,
+    pm10: 0,
+    pm25: 0
+  }));
+  
+  // Get prediction with actual dust levels
+  const dustData = data.map(item => ({
+    ...item,
+    pm10: item.pm10 || 0,
+    pm25: item.pm25 || 0
+  }));
+  
+  // Create tensors for both scenarios
+  const baselineTensor = tf.tensor2d(baselineData.map(row => [
+    row.solarIrradiance,
+    row.temperature,
+    row.humidity,
+    row.windSpeed,
+    0,  // pm10
+    0,  // pm25
+    row.cloudCover || 0
+  ]));
+  
+  const dustTensor = tf.tensor2d(dustData.map(row => [
+    row.solarIrradiance,
+    row.temperature,
+    row.humidity,
+    row.windSpeed,
+    row.pm10,
+    row.pm25,
+    row.cloudCover || 0
+  ]));
+  
+  // Get predictions for both scenarios
+  const baselinePredictions = modelCache['neural_network'].predict(baselineTensor) as tf.Tensor;
+  const dustPredictions = modelCache['neural_network'].predict(dustTensor) as tf.Tensor;
+  
+  // Calculate average impact
+  const baselineValues = Array.from(baselinePredictions.dataSync());
+  const dustValues = Array.from(dustPredictions.dataSync());
+  
+  const avgBaselinePower = baselineValues.reduce((a, b) => a + b, 0) / baselineValues.length;
+  const avgDustPower = dustValues.reduce((a, b) => a + b, 0) / dustValues.length;
+  
+  // Calculate percentage impact
+  const impactPercentage = ((avgBaselinePower - avgDustPower) / avgBaselinePower) * 100;
+  
+  // Clean up tensors
+  baselineTensor.dispose();
+  dustTensor.dispose();
+  baselinePredictions.dispose();
+  dustPredictions.dispose();
+  
+  return Math.min(Math.max(0, impactPercentage), 100); // Cap between 0-100%
 };

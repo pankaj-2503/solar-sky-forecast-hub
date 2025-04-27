@@ -1,8 +1,8 @@
-
 export interface PredictionMetrics {
   mse: number;  // Mean Squared Error
   r2: number;   // R-squared (coefficient of determination)
   mae: number;  // Mean Absolute Error
+  dustImpact?: number;
 }
 
 export interface ModelResult {
@@ -31,4 +31,6 @@ export interface WeatherPredictionData {
   cloudCover?: number;
   actualPower?: number;  // Now optional
   time?: string;
+  latitude?: number;
+  longitude?: number;
 }
